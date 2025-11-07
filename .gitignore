@@ -87,3 +87,5 @@ lerna-debug.log*
 *.bak
 *.backup
 *~
+
+GITHUB_SETUP.md
