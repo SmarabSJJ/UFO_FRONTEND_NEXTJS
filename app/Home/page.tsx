@@ -1,5 +1,11 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import Link from "next/link";
+import UserForm from "./UserForm";
+
+// Force dynamic rendering to ensure searchParams are always fresh
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function HomePage({
   searchParams,
@@ -12,36 +18,63 @@ export default async function HomePage({
   }>;
 }) {
   const params = await searchParams;
-  // Get seat from temporary session cookie (session-only, cleared when browser closes)
+  // Log for debugging
+  console.log("Home page - seat parameter from URL:", params.seat);
+
+  // Seat must come from URL parameter only - no cookies
+  // If no seat in URL, redirect to root with error
+  if (!params.seat || params.seat.trim() === "") {
+    console.error(
+      "Home page accessed without seat parameter - redirecting to root"
+    );
+    redirect("/?error=no_seat");
+  }
+
+  const trimmedSeat = params.seat.trim();
+
+  // Validate seat pattern: must start with 0 or 1, followed by one or more digits
+  // Examples: 01, 11, 012, 112, etc.
+  const seatPattern = /^[01]\d+$/;
+
+  if (!seatPattern.test(trimmedSeat)) {
+    console.error("Home page - invalid seat format:", trimmedSeat);
+    console.error(
+      "Home page - seat must start with 0 or 1, followed by digits"
+    );
+    redirect("/?error=invalid_seat_format");
+  }
+
+  const seatValue = trimmedSeat;
   const cookieStore = await cookies();
-  const seatValue = cookieStore.get("temp_seat")?.value;
+
   const linkedinDataCookie = cookieStore.get("linkedin_data")?.value;
   const linkedinConnected = params.linkedin === "connected";
   const error = params.error;
   const errorDetails = params.details;
 
   // Parse LinkedIn data if available
+  // Note: We cannot modify cookies in Server Components, so we just read the data
+  // The seat value always comes from the URL parameter, not from stored data
   let linkedinData = null;
   if (linkedinDataCookie) {
     try {
       linkedinData = JSON.parse(linkedinDataCookie);
+      // Update seatId in the parsed data object for display purposes only
+      // (we don't save it back to cookies since that's not allowed in Server Components)
+      if (seatValue) {
+        linkedinData.seatId = seatValue;
+      }
     } catch (e) {
       console.error("Error parsing LinkedIn data:", e);
     }
   }
 
-  // Create seat object with the information (memory-less - only from URL param)
-  const seatInfo = seatValue
-    ? {
-        seat: seatValue,
-        timestamp: new Date().toISOString(),
-        status: "active",
-      }
-    : {
-        seat: "Not configured - please scan QR code again",
-        timestamp: new Date().toISOString(),
-        status: "not_set",
-      };
+  // Create seat object with the information (only from URL param)
+  const seatInfo = {
+    seat: seatValue,
+    timestamp: new Date().toISOString(),
+    status: "active",
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
@@ -130,46 +163,17 @@ export default async function HomePage({
             )}
 
             {linkedinData ? (
-              <div className="space-y-3 mb-4">
-                <div className="text-left">
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2">
-                    LinkedIn Profile Data:
-                  </p>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-black dark:text-zinc-50">
-                      <span className="font-semibold">First Name:</span>{" "}
-                      {linkedinData.firstName}
-                    </p>
-                    <p className="text-black dark:text-zinc-50">
-                      <span className="font-semibold">Last Name:</span>{" "}
-                      {linkedinData.lastName}
-                    </p>
-                    <p className="text-black dark:text-zinc-50">
-                      <span className="font-semibold">LinkedIn ID:</span>{" "}
-                      {linkedinData.lID}
-                    </p>
-                    <p className="text-black dark:text-zinc-50">
-                      <span className="font-semibold">Seat ID:</span>{" "}
-                      {linkedinData.seatId}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Display full LinkedIn JSON response */}
-                {linkedinData.fullLinkedInResponse && (
-                  <div className="mt-4 p-4 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mb-2">
-                      Full LinkedIn JSON Response:
-                    </p>
-                    <pre className="text-xs text-left text-zinc-700 dark:text-zinc-300 overflow-auto max-h-96">
-                      {JSON.stringify(
-                        linkedinData.fullLinkedInResponse,
-                        null,
-                        2
-                      )}
-                    </pre>
-                  </div>
-                )}
+              <div className="mb-4">
+                <UserForm
+                  initialData={{
+                    firstName: linkedinData.firstName || "",
+                    lastName: linkedinData.lastName || "",
+                    email: linkedinData.email || "",
+                    lID: linkedinData.lID || "",
+                    seatId: linkedinData.seatId || "",
+                  }}
+                  seat={seatValue}
+                />
               </div>
             ) : (
               <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
@@ -177,20 +181,34 @@ export default async function HomePage({
               </p>
             )}
 
-            <Link
-              href="/api/linkedin/auth"
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#0077b5] hover:bg-[#005885] text-white font-semibold rounded-lg transition-colors duration-200"
-            >
-              <svg
-                className="w-5 h-5"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
+            <div className="flex gap-3">
+              <a
+                href={`/api/linkedin/auth?seat=${encodeURIComponent(
+                  seatValue
+                )}${linkedinData ? "&force=true" : ""}`}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#0077b5] hover:bg-[#005885] text-white font-semibold rounded-lg transition-colors duration-200"
               >
-                <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-              </svg>
-              {linkedinData ? "Reconnect LinkedIn" : "Connect with LinkedIn"}
-            </Link>
+                <svg
+                  className="w-5 h-5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                </svg>
+                {linkedinData ? "Reconnect LinkedIn" : "Connect with LinkedIn"}
+              </a>
+              {linkedinData && (
+                <Link
+                  href={`/api/clear-cookies?seat=${encodeURIComponent(
+                    seatValue
+                  )}`}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 font-semibold rounded-lg transition-colors duration-200 text-sm"
+                >
+                  Clear Cookies
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </main>

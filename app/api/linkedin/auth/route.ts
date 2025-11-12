@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 
 export async function GET(request: NextRequest) {
   const clientId = process.env.LINKEDIN_CLIENT_ID;
@@ -12,16 +11,25 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Get seat ID from cookies to pass through OAuth flow
-  const cookieStore = await cookies();
-  const seatId = cookieStore.get("seat")?.value;
+  // Get seat ID from URL parameter to pass through OAuth flow
+  const searchParams = request.nextUrl.searchParams;
+  const seatId = searchParams.get("seat");
+  const forceLogin = searchParams.get("force") === "true"; // Check if we should force account selection
 
   // LinkedIn OAuth 2.0 authorization URL
   // For OpenID Connect, we need openid, profile, and email scopes
   // to access the userinfo endpoint
   const scope = "openid profile email";
   const state = seatId || "default"; // Use seat ID as state to pass it through
-  const authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(scope)}`;
+  
+  // Build the authorization URL
+  let authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(scope)}`;
+  
+  // Add prompt=select_account to force account selection screen
+  // This allows users to choose a different LinkedIn account
+  if (forceLogin) {
+    authUrl += `&prompt=select_account`;
+  }
 
   return NextResponse.redirect(authUrl);
 }

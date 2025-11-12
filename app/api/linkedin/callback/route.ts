@@ -7,15 +7,18 @@ export async function GET(request: NextRequest) {
   const state = searchParams.get("state"); // This contains the seat ID
   const error = searchParams.get("error");
 
+  // Get seat from state to pass through error redirects
+  const seatParam = state && state !== "default" ? `&seat=${encodeURIComponent(state)}` : "";
+
   if (error) {
     return NextResponse.redirect(
-      new URL(`/Home?error=${encodeURIComponent(error)}`, request.url)
+      new URL(`/Home?error=${encodeURIComponent(error)}${seatParam}`, request.url)
     );
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL("/Home?error=no_code", request.url)
+      new URL(`/Home?error=no_code${seatParam}`, request.url)
     );
   }
 
@@ -24,9 +27,12 @@ export async function GET(request: NextRequest) {
   const redirectUri = process.env.LINKEDIN_REDIRECT_URI || `${request.nextUrl.origin}/api/linkedin/callback`;
 
   if (!clientId || !clientSecret) {
-    return NextResponse.redirect(
-      new URL("/Home?error=config_error", request.url)
-    );
+    const errorUrl = new URL("/Home", request.url);
+    errorUrl.searchParams.set("error", "config_error");
+    if (state && state !== "default") {
+      errorUrl.searchParams.set("seat", state);
+    }
+    return NextResponse.redirect(errorUrl);
   }
 
   try {
@@ -49,9 +55,13 @@ export async function GET(request: NextRequest) {
       const errorText = await tokenResponse.text();
       console.error("Token exchange error:", errorText);
       console.error("Status:", tokenResponse.status);
-      return NextResponse.redirect(
-        new URL(`/Home?error=token_exchange_failed&details=${encodeURIComponent(errorText)}`, request.url)
-      );
+      const errorUrl = new URL("/Home", request.url);
+      errorUrl.searchParams.set("error", "token_exchange_failed");
+      errorUrl.searchParams.set("details", errorText.substring(0, 200));
+      if (state && state !== "default") {
+        errorUrl.searchParams.set("seat", state);
+      }
+      return NextResponse.redirect(errorUrl);
     }
 
     const tokenData = await tokenResponse.json();
@@ -66,25 +76,20 @@ export async function GET(request: NextRequest) {
       maxAge: 60 * 60, // 1 hour
     });
 
-    // Store seat ID if it was passed in state
+    // Redirect to fetch LinkedIn data and send to API with seat in URL
+    const fetchUrl = new URL("/api/linkedin/fetch-and-send", request.url);
     if (state && state !== "default") {
-      cookieStore.set("seat", state, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 60 * 60 * 24, // 24 hours
-      });
+      fetchUrl.searchParams.set("seat", state);
     }
-
-    // Redirect to fetch LinkedIn data and send to API
-    return NextResponse.redirect(
-      new URL("/api/linkedin/fetch-and-send", request.url)
-    );
+    return NextResponse.redirect(fetchUrl);
   } catch (error) {
     console.error("LinkedIn callback error:", error);
-    return NextResponse.redirect(
-      new URL("/Home?error=callback_error", request.url)
-    );
+    const errorUrl = new URL("/Home", request.url);
+    errorUrl.searchParams.set("error", "callback_error");
+    if (state && state !== "default") {
+      errorUrl.searchParams.set("seat", state);
+    }
+    return NextResponse.redirect(errorUrl);
   }
 }
 

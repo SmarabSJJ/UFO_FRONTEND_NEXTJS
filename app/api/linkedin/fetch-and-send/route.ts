@@ -4,13 +4,18 @@ import { cookies } from "next/headers";
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get("linkedin_access_token")?.value;
-  const seatId = cookieStore.get("seat")?.value || "not_set";
+  // Get seat from URL parameter (passed from callback via state)
+  const searchParams = request.nextUrl.searchParams;
+  const seatId = searchParams.get("seat") || "not_set";
 
   if (!accessToken) {
     console.error("No access token found in cookies");
-    return NextResponse.redirect(
-      new URL("/Home?error=no_access_token", request.url)
-    );
+    const errorUrl = new URL("/Home", request.url);
+    errorUrl.searchParams.set("error", "no_access_token");
+    if (seatId && seatId !== "not_set") {
+      errorUrl.searchParams.set("seat", seatId);
+    }
+    return NextResponse.redirect(errorUrl);
   }
 
   try {
@@ -25,9 +30,13 @@ export async function GET(request: NextRequest) {
       const errorText = await profileResponse.text();
       console.error("LinkedIn API error:", errorText);
       console.error("Status:", profileResponse.status);
-      return NextResponse.redirect(
-        new URL(`/Home?error=linkedin_api_error&details=${encodeURIComponent(errorText.substring(0, 200))}`, request.url)
-      );
+      const errorUrl = new URL("/Home", request.url);
+      errorUrl.searchParams.set("error", "linkedin_api_error");
+      errorUrl.searchParams.set("details", errorText.substring(0, 200));
+      if (seatId && seatId !== "not_set") {
+        errorUrl.searchParams.set("seat", seatId);
+      }
+      return NextResponse.redirect(errorUrl);
     }
 
     const profileData = await profileResponse.json();
@@ -40,6 +49,7 @@ export async function GET(request: NextRequest) {
     // Extract the data you need
     const firstName = profileData.given_name || profileData.name?.split(" ")[0] || "";
     const lastName = profileData.family_name || profileData.name?.split(" ").slice(1).join(" ") || "";
+    const email = profileData.email || "";
     
     // Extract LinkedIn ID
     // The userinfo endpoint provides 'sub' which is the LinkedIn person URN
@@ -77,6 +87,7 @@ export async function GET(request: NextRequest) {
     const dataToSend = {
       firstName,
       lastName,
+      email,
       lID,
       seatId,
       // Include full LinkedIn response for debugging
@@ -120,16 +131,23 @@ export async function GET(request: NextRequest) {
     // Clear the access token from cookies
     cookieStore.delete("linkedin_access_token");
 
-    // Redirect back to Home with success
-    return NextResponse.redirect(
-      new URL("/Home?linkedin=connected", request.url)
-    );
+    // Redirect back to Home with success and seat in URL
+    const homeUrl = new URL("/Home", request.url);
+    homeUrl.searchParams.set("linkedin", "connected");
+    if (seatId && seatId !== "not_set") {
+      homeUrl.searchParams.set("seat", seatId);
+    }
+    return NextResponse.redirect(homeUrl);
   } catch (error) {
     console.error("Error fetching LinkedIn data:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    return NextResponse.redirect(
-      new URL(`/Home?error=fetch_error&details=${encodeURIComponent(errorMessage)}`, request.url)
-    );
+    const errorUrl = new URL("/Home", request.url);
+    errorUrl.searchParams.set("error", "fetch_error");
+    errorUrl.searchParams.set("details", errorMessage);
+    if (seatId && seatId !== "not_set") {
+      errorUrl.searchParams.set("seat", seatId);
+    }
+    return NextResponse.redirect(errorUrl);
   }
 }
 
