@@ -4,21 +4,21 @@ import { cookies } from "next/headers";
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get("code");
-  const state = searchParams.get("state"); // This contains the seat ID
+  const state = searchParams.get("state"); // This contains the token
   const error = searchParams.get("error");
 
-  // Get seat from state to pass through error redirects
-  const seatParam = state && state !== "default" ? `&seat=${encodeURIComponent(state)}` : "";
+  // Get token from state to pass through error redirects
+  const tokenParam = state && state !== "default" ? `&token=${encodeURIComponent(state)}` : "";
 
   if (error) {
     return NextResponse.redirect(
-      new URL(`/Home?error=${encodeURIComponent(error)}${seatParam}`, request.url)
+      new URL(`/Home?error=${encodeURIComponent(error)}${tokenParam}`, request.url)
     );
   }
 
   if (!code) {
     return NextResponse.redirect(
-      new URL(`/Home?error=no_code${seatParam}`, request.url)
+      new URL(`/Home?error=no_code${tokenParam}`, request.url)
     );
   }
 
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     const errorUrl = new URL("/Home", request.url);
     errorUrl.searchParams.set("error", "config_error");
     if (state && state !== "default") {
-      errorUrl.searchParams.set("seat", state);
+      errorUrl.searchParams.set("token", state);
     }
     return NextResponse.redirect(errorUrl);
   }
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
       errorUrl.searchParams.set("error", "token_exchange_failed");
       errorUrl.searchParams.set("details", errorText.substring(0, 200));
       if (state && state !== "default") {
-        errorUrl.searchParams.set("seat", state);
+        errorUrl.searchParams.set("token", state);
       }
       return NextResponse.redirect(errorUrl);
     }
@@ -76,10 +76,10 @@ export async function GET(request: NextRequest) {
       maxAge: 60 * 60, // 1 hour
     });
 
-    // Redirect to fetch LinkedIn data and send to API with seat in URL
+    // Redirect to fetch LinkedIn data and send to API with token in URL
     const fetchUrl = new URL("/api/linkedin/fetch-and-send", request.url);
     if (state && state !== "default") {
-      fetchUrl.searchParams.set("seat", state);
+      fetchUrl.searchParams.set("token", state);
     }
     return NextResponse.redirect(fetchUrl);
   } catch (error) {
@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
     const errorUrl = new URL("/Home", request.url);
     errorUrl.searchParams.set("error", "callback_error");
     if (state && state !== "default") {
-      errorUrl.searchParams.set("seat", state);
+      errorUrl.searchParams.set("token", state);
     }
     return NextResponse.redirect(errorUrl);
   }

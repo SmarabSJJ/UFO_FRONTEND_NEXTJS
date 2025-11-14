@@ -2,16 +2,23 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import UserForm from "./UserForm";
+import { validateToken } from "@/lib/token-utils";
 
 // Force dynamic rendering to ensure searchParams are always fresh
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  process.env.BACKEND_URL ||
+  "http://127.0.0.1:5000";
+const SESSION_COOKIE_NAME = "auth_session";
+
 export default async function HomePage({
   searchParams,
 }: {
   searchParams: Promise<{
-    seat?: string;
+    token?: string;
     linkedin?: string;
     error?: string;
     details?: string;
@@ -19,59 +26,92 @@ export default async function HomePage({
 }) {
   const params = await searchParams;
   // Log for debugging
-  console.log("Home page - seat parameter from URL:", params.seat);
+  console.log("Home page - token parameter:", params.token);
 
-  // Seat must come from URL parameter only - no cookies
-  // If no seat in URL, redirect to root with error
-  if (!params.seat || params.seat.trim() === "") {
-    console.error(
-      "Home page accessed without seat parameter - redirecting to root"
-    );
-    redirect("/?error=no_seat");
+  // Only accept token - no legacy seat/room support
+  if (!params.token || params.token.trim() === "") {
+    console.error("Home page accessed without token - redirecting to root");
+    redirect("/?error=no_token");
   }
 
-  const trimmedSeat = params.seat.trim();
+  const token = params.token.trim();
+  console.log("Home page - decrypting token:", token);
 
-  // Validate seat pattern: must start with 0 or 1, followed by one or more digits
-  // Examples: 01, 11, 012, 112, etc.
+  // Decrypt token to get seat and room
+  const tokenData = validateToken(token);
+
+  if (!tokenData) {
+    console.error("Home page - invalid token");
+    redirect("/?error=invalid_token");
+  }
+
+  const seatValue = tokenData.seat;
+  const roomValue = tokenData.room;
+  console.log("Home page - token decrypted - seat:", seatValue, "room:", roomValue);
+
+  // Validate seat pattern
   const seatPattern = /^[01]\d+$/;
-
-  if (!seatPattern.test(trimmedSeat)) {
-    console.error("Home page - invalid seat format:", trimmedSeat);
-    console.error(
-      "Home page - seat must start with 0 or 1, followed by digits"
-    );
-    redirect("/?error=invalid_seat_format");
+  if (!seatPattern.test(seatValue.trim())) {
+    console.error("Home page - invalid seat format from token:", seatValue);
+    redirect("/?error=invalid_token");
   }
-
-  const seatValue = trimmedSeat;
   const cookieStore = await cookies();
 
-  const linkedinDataCookie = cookieStore.get("linkedin_data")?.value;
+  const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const linkedinConnected = params.linkedin === "connected";
   const error = params.error;
   const errorDetails = params.details;
 
-  // Parse LinkedIn data if available
-  // Note: We cannot modify cookies in Server Components, so we just read the data
-  // The seat value always comes from the URL parameter, not from stored data
-  let linkedinData = null;
-  if (linkedinDataCookie) {
+  let sessionUser: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    linkedinId?: string;
+    seat?: string;
+  } | null = null;
+
+  if (sessionCookie) {
     try {
-      linkedinData = JSON.parse(linkedinDataCookie);
-      // Update seatId in the parsed data object for display purposes only
-      // (we don't save it back to cookies since that's not allowed in Server Components)
-      if (seatValue) {
-        linkedinData.seatId = seatValue;
+      const sessionResponse = await fetch(`${BACKEND_URL}/auth/session`, {
+        headers: {
+          Cookie: `${SESSION_COOKIE_NAME}=${sessionCookie}`,
+        },
+        cache: "no-store",
+      });
+
+      if (sessionResponse.ok) {
+        sessionUser = await sessionResponse.json();
+      } else {
+        console.error(
+          "Failed to fetch session data from backend.",
+          sessionResponse.status
+        );
       }
-    } catch (e) {
-      console.error("Error parsing LinkedIn data:", e);
+    } catch (sessionError) {
+      console.error("Error fetching session from backend:", sessionError);
     }
   }
+
+  const linkedinData = sessionUser
+    ? {
+        firstName: sessionUser.firstName || "",
+        lastName: sessionUser.lastName || "",
+        email: sessionUser.email || "",
+        linkedinId: sessionUser.linkedinId || "",
+        seatId: sessionUser.seat || seatValue,
+      }
+    : null;
+
+  const linkedinIsConnected = linkedinConnected || Boolean(linkedinData);
+
+  // Use API route to store token in cookie and redirect to Flask
+  // This ensures cookie is set server-side before redirect
+  const linkedinAuthUrl = `/api/linkedin/auth-start?token=${encodeURIComponent(params.token!)}`;
 
   // Create seat object with the information (only from URL param)
   const seatInfo = {
     seat: seatValue,
+    room: roomValue,
     timestamp: new Date().toISOString(),
     status: "active",
   };
@@ -89,9 +129,20 @@ export default async function HomePage({
               Your Seat Information:
             </p>
             <div className="space-y-2">
-              <p className="text-3xl font-semibold text-black dark:text-zinc-50">
-                {seatInfo.seat}
-              </p>
+              <div className="flex items-center gap-4">
+                <div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Seat</p>
+                  <p className="text-3xl font-semibold text-black dark:text-zinc-50">
+                    {seatInfo.seat}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Room</p>
+                  <p className="text-3xl font-semibold text-black dark:text-zinc-50">
+                    {seatInfo.room}
+                  </p>
+                </div>
+              </div>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
                 Status: {seatInfo.status}
               </p>
@@ -156,7 +207,7 @@ export default async function HomePage({
               </div>
             )}
 
-            {linkedinConnected && !error && (
+            {linkedinIsConnected && !error && (
               <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-400 text-sm">
                 Successfully connected to LinkedIn!
               </div>
@@ -169,10 +220,12 @@ export default async function HomePage({
                     firstName: linkedinData.firstName || "",
                     lastName: linkedinData.lastName || "",
                     email: linkedinData.email || "",
-                    lID: linkedinData.lID || "",
+                    linkedinId: linkedinData.linkedinId || "",
                     seatId: linkedinData.seatId || "",
                   }}
                   seat={seatValue}
+                  room={roomValue}
+                  token={params.token || undefined}
                 />
               </div>
             ) : (
@@ -183,9 +236,7 @@ export default async function HomePage({
 
             <div className="flex gap-3">
               <a
-                href={`/api/linkedin/auth?seat=${encodeURIComponent(
-                  seatValue
-                )}${linkedinData ? "&force=true" : ""}`}
+                href={linkedinAuthUrl}
                 className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#0077b5] hover:bg-[#005885] text-white font-semibold rounded-lg transition-colors duration-200"
               >
                 <svg
@@ -200,9 +251,7 @@ export default async function HomePage({
               </a>
               {linkedinData && (
                 <Link
-                  href={`/api/clear-cookies?seat=${encodeURIComponent(
-                    seatValue
-                  )}`}
+                  href={`/api/clear-cookies?token=${encodeURIComponent(params.token!)}`}
                   className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 font-semibold rounded-lg transition-colors duration-200 text-sm"
                 >
                   Clear Cookies

@@ -8,17 +8,33 @@ export async function GET(request: NextRequest) {
   cookieStore.delete("linkedin_data");
   cookieStore.delete("linkedin_access_token");
   cookieStore.delete("temp_seat");
+  cookieStore.delete("auth_session");
   
-  // Get the seat parameter if present to redirect back
+  // Only accept token - no legacy seat/room support
   const searchParams = request.nextUrl.searchParams;
-  const seat = searchParams.get("seat");
+  const token = searchParams.get("token");
   
   // Redirect back to Home page
   const homeUrl = new URL("/Home", request.url);
-  if (seat) {
-    homeUrl.searchParams.set("seat", seat);
-  }
   
-  return NextResponse.redirect(homeUrl);
+  // Must have token
+  if (token) {
+    homeUrl.searchParams.set("token", token);
+  } else {
+    // No token provided - redirect to root with error
+    const rootUrl = new URL("/", request.url);
+    rootUrl.searchParams.set("error", "no_token");
+    return NextResponse.redirect(rootUrl);
+  }
+
+  const response = NextResponse.redirect(homeUrl);
+  response.cookies.set({
+    name: "auth_session",
+    value: "",
+    maxAge: 0,
+    path: "/",
+  });
+  
+  return response;
 }
 

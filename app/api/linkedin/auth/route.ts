@@ -11,16 +11,16 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Get seat ID from URL parameter to pass through OAuth flow
+  // Get token from URL parameter to pass through OAuth flow
   const searchParams = request.nextUrl.searchParams;
-  const seatId = searchParams.get("seat");
+  const token = searchParams.get("token");
   const forceLogin = searchParams.get("force") === "true"; // Check if we should force account selection
 
   // LinkedIn OAuth 2.0 authorization URL
   // For OpenID Connect, we need openid, profile, and email scopes
   // to access the userinfo endpoint
   const scope = "openid profile email";
-  const state = seatId || "default"; // Use seat ID as state to pass it through
+  const state = token || "default"; // Use token as state to pass it through OAuth flow
   
   // Build the authorization URL
   let authUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}&scope=${encodeURIComponent(scope)}`;

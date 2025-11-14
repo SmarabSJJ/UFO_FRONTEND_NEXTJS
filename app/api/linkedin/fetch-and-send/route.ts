@@ -4,16 +4,16 @@ import { cookies } from "next/headers";
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get("linkedin_access_token")?.value;
-  // Get seat from URL parameter (passed from callback via state)
+  // Get token from URL parameter (passed from callback via state)
   const searchParams = request.nextUrl.searchParams;
-  const seatId = searchParams.get("seat") || "not_set";
+  const token = searchParams.get("token");
 
   if (!accessToken) {
     console.error("No access token found in cookies");
     const errorUrl = new URL("/Home", request.url);
     errorUrl.searchParams.set("error", "no_access_token");
-    if (seatId && seatId !== "not_set") {
-      errorUrl.searchParams.set("seat", seatId);
+    if (token) {
+      errorUrl.searchParams.set("token", token);
     }
     return NextResponse.redirect(errorUrl);
   }
@@ -33,8 +33,8 @@ export async function GET(request: NextRequest) {
       const errorUrl = new URL("/Home", request.url);
       errorUrl.searchParams.set("error", "linkedin_api_error");
       errorUrl.searchParams.set("details", errorText.substring(0, 200));
-      if (seatId && seatId !== "not_set") {
-        errorUrl.searchParams.set("seat", seatId);
+      if (token) {
+        errorUrl.searchParams.set("token", token);
       }
       return NextResponse.redirect(errorUrl);
     }
@@ -81,6 +81,22 @@ export async function GET(request: NextRequest) {
     // Final fallback: construct from name if we have both
     if (!lID && firstName && lastName) {
       lID = (firstName + lastName.charAt(0)).replace(/\s+/g, "") + "/";
+    }
+
+    // Decode token to get seat and room for data storage
+    let seatId = "not_set";
+    let roomId = "100";
+    if (token) {
+      try {
+        const { validateToken } = await import("@/lib/token-utils");
+        const tokenData = validateToken(token);
+        if (tokenData) {
+          seatId = tokenData.seat;
+          roomId = tokenData.room;
+        }
+      } catch (err) {
+        console.error("Error decoding token in fetch-and-send:", err);
+      }
     }
 
     // Prepare data to display
@@ -131,11 +147,11 @@ export async function GET(request: NextRequest) {
     // Clear the access token from cookies
     cookieStore.delete("linkedin_access_token");
 
-    // Redirect back to Home with success and seat in URL
+    // Redirect back to Home with success and token in URL
     const homeUrl = new URL("/Home", request.url);
     homeUrl.searchParams.set("linkedin", "connected");
-    if (seatId && seatId !== "not_set") {
-      homeUrl.searchParams.set("seat", seatId);
+    if (token) {
+      homeUrl.searchParams.set("token", token);
     }
     return NextResponse.redirect(homeUrl);
   } catch (error) {
@@ -144,8 +160,8 @@ export async function GET(request: NextRequest) {
     const errorUrl = new URL("/Home", request.url);
     errorUrl.searchParams.set("error", "fetch_error");
     errorUrl.searchParams.set("details", errorMessage);
-    if (seatId && seatId !== "not_set") {
-      errorUrl.searchParams.set("seat", seatId);
+    if (token) {
+      errorUrl.searchParams.set("token", token);
     }
     return NextResponse.redirect(errorUrl);
   }

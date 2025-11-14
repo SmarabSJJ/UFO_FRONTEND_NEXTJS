@@ -3,11 +3,18 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const seat = searchParams.get("seat");
+    const seatRaw = searchParams.get("seat");
+    const room = searchParams.get("room");
+
+    // Explicitly convert to string to handle any type coercion issues
+    // This ensures seat is always a string, even if Next.js parsed it as a number
+    const seat = seatRaw ? String(seatRaw) : null;
 
     // Log for debugging
     console.log("set-seat route called");
-    console.log("Raw seat parameter:", seat);
+    console.log("Raw seat parameter:", seatRaw);
+    console.log("Raw seat parameter (after string conversion):", seat);
+    console.log("Raw room parameter:", room);
     console.log("Raw seat parameter (JSON):", JSON.stringify(seat));
     console.log("Seat parameter type:", typeof seat);
     console.log("All search params:", Object.fromEntries(searchParams.entries()));
@@ -29,12 +36,21 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(rootUrl);
       }
       
-      // Redirect to Home page with seat in URL parameter
+      // Get room parameter, default to "100" if not specified
+      const roomValue = room && room.trim() !== "" 
+        ? room.trim() 
+        : "100";
+      
+      // Redirect to Home page with seat and room in URL parameters
       const baseUrl = new URL(request.url);
       const homeUrl = new URL("/Home", `${baseUrl.protocol}//${baseUrl.host}`);
-      homeUrl.searchParams.set("seat", trimmedSeat);
+      // Explicitly ensure both values are strings to prevent any type coercion issues
+      homeUrl.searchParams.set("seat", String(trimmedSeat));
+      homeUrl.searchParams.set("room", String(roomValue));
       
       console.log("set-seat route - seat value:", trimmedSeat);
+      console.log("set-seat route - seat value (stringified):", String(trimmedSeat));
+      console.log("set-seat route - room value:", roomValue);
       console.log("set-seat route - redirecting to:", homeUrl.toString());
       
       return NextResponse.redirect(homeUrl);

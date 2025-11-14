@@ -9,6 +9,7 @@ interface UserFormData {
   email: string;
   linkedinUrl: string;
   seat: string;
+  room: string;
 }
 
 interface UserFormProps {
@@ -16,13 +17,15 @@ interface UserFormProps {
     firstName: string;
     lastName: string;
     email?: string;
-    lID?: string;
+    linkedinId?: string;
     seatId?: string;
   };
   seat: string;
+  room: string;
+  token: string; // Required token to keep in URL
 }
 
-export default function UserForm({ initialData, seat }: UserFormProps) {
+export default function UserForm({ initialData, seat, room, token }: UserFormProps) {
   const router = useRouter();
   const [formData, setFormData] = useState<UserFormData>({
     firstName: initialData.firstName || "",
@@ -30,6 +33,7 @@ export default function UserForm({ initialData, seat }: UserFormProps) {
     email: initialData.email || "",
     linkedinUrl: "", // Always start blank
     seat: seat || initialData.seatId || "",
+    room: room || "100",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -43,8 +47,9 @@ export default function UserForm({ initialData, seat }: UserFormProps) {
       email: initialData.email || "",
       linkedinUrl: "", // Always keep blank, don't pre-fill from lID
       seat: seat || initialData.seatId || "",
+      room: room || "100",
     });
-  }, [initialData, seat]);
+  }, [initialData, seat, room]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -83,6 +88,7 @@ export default function UserForm({ initialData, seat }: UserFormProps) {
         },
         body: JSON.stringify({
           seatID: formData.seat,
+          roomID: formData.room,
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
@@ -92,8 +98,15 @@ export default function UserForm({ initialData, seat }: UserFormProps) {
       });
 
       if (response.ok) {
-        // Redirect to waiting room
-        router.push(`/waiting-room?seat=${encodeURIComponent(formData.seat)}`);
+        // Redirect to waiting room - must use token
+        if (token) {
+          router.push(`/waiting-room?token=${encodeURIComponent(token)}`);
+        } else {
+          // Should not happen if token is required, but handle gracefully
+          console.error("UserForm: No token available for redirect");
+          setSubmitStatus("error");
+          setIsSubmitting(false);
+        }
       } else {
         setSubmitStatus("error");
         setIsSubmitting(false);
@@ -180,25 +193,47 @@ export default function UserForm({ initialData, seat }: UserFormProps) {
           />
         </div>
 
-        <div>
-          <label
-            htmlFor="seat"
-            className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1"
-          >
-            Seat
-          </label>
-          <input
-            type="text"
-            id="seat"
-            name="seat"
-            value={formData.seat}
-            readOnly
-            disabled
-            className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 cursor-not-allowed"
-          />
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            Seat cannot be changed
-          </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label
+              htmlFor="seat"
+              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+            >
+              Seat
+            </label>
+            <input
+              type="text"
+              id="seat"
+              name="seat"
+              value={formData.seat}
+              readOnly
+              disabled
+              className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 cursor-not-allowed"
+            />
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Seat cannot be changed
+            </p>
+          </div>
+          <div>
+            <label
+              htmlFor="room"
+              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1"
+            >
+              Room
+            </label>
+            <input
+              type="text"
+              id="room"
+              name="room"
+              value={formData.room}
+              readOnly
+              disabled
+              className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 cursor-not-allowed"
+            />
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+              Room cannot be changed
+            </p>
+          </div>
         </div>
       </div>
 
