@@ -2,12 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useLocalStorage } from "../Home/useLocalStorage";
 
 interface UserFormData {
   firstName: string;
   lastName: string;
   email: string;
   linkedinUrl: string;
+  profilePicture: string;
   seat: string;
   room: string;
 }
@@ -22,44 +24,152 @@ interface UserFormProps {
   };
   seat: string;
   room: string;
-  token: string; // Required token to keep in URL
+  token: string;
 }
 
 export default function UserForm({ initialData, seat, room, token }: UserFormProps) {
   const router = useRouter();
+  
+  const [savedUserData, setSavedUserData, isLoadingStorage, clearSavedUserData] = useLocalStorage<{
+    firstName: string;
+    lastName: string;
+    email: string;
+    linkedinUrl: string;
+    profilePicture: string;
+  }>('userFormData', {
+    firstName: '',
+    lastName: '',
+    email: '',
+    linkedinUrl: '',
+    profilePicture: ''
+  });
+
   const [formData, setFormData] = useState<UserFormData>({
     firstName: initialData.firstName || "",
     lastName: initialData.lastName || "",
     email: initialData.email || "",
-    linkedinUrl: "", // Always start blank
+    linkedinUrl: "",
+    profilePicture: "",
     seat: seat || initialData.seatId || "",
     room: room || "100",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<"idle" | "error">("idle");
+  const [photoUrlInput, setPhotoUrlInput] = useState("");
+  const [showUrlInput, setShowUrlInput] = useState(false);
 
-  // Update form data when initialData changes (but keep linkedinUrl blank)
   useEffect(() => {
-    setFormData({
-      firstName: initialData.firstName || "",
-      lastName: initialData.lastName || "",
-      email: initialData.email || "",
-      linkedinUrl: "", // Always keep blank, don't pre-fill from lID
+    if (!isLoadingStorage && savedUserData) {
+      setFormData(prev => ({
+        ...prev,
+        firstName: savedUserData.firstName || initialData.firstName || "",
+        lastName: savedUserData.lastName || initialData.lastName || "",
+        email: savedUserData.email || initialData.email || "",
+        linkedinUrl: savedUserData.linkedinUrl || "",
+        profilePicture: savedUserData.profilePicture || "",
+      }));
+    }
+  }, [isLoadingStorage, savedUserData, initialData]);
+
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
       seat: seat || initialData.seatId || "",
       room: room || "100",
-    });
-  }, [initialData, seat, room]);
+    }));
+  }, [seat, room, initialData.seatId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    
     setFormData((prev) => ({
       ...prev,
       [name]: value,
     }));
-    // Reset submit status when user makes changes
+
+    if (name !== 'seat' && name !== 'room') {
+      setSavedUserData(prev => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
+
     if (submitStatus !== "idle") {
       setSubmitStatus("idle");
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File size must be less than 5MB');
+        return;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        alert('Please upload an image file');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        setFormData(prev => ({
+          ...prev,
+          profilePicture: base64String,
+        }));
+        setSavedUserData(prev => ({
+          ...prev,
+          profilePicture: base64String,
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUrlSubmit = () => {
+    if (photoUrlInput.trim()) {
+      setFormData(prev => ({
+        ...prev,
+        profilePicture: photoUrlInput.trim(),
+      }));
+      setSavedUserData(prev => ({
+        ...prev,
+        profilePicture: photoUrlInput.trim(),
+      }));
+      setPhotoUrlInput("");
+      setShowUrlInput(false);
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setFormData(prev => ({
+      ...prev,
+      profilePicture: "",
+    }));
+    setSavedUserData(prev => ({
+      ...prev,
+      profilePicture: "",
+    }));
+    setPhotoUrlInput("");
+  };
+
+  const handleClearData = () => {
+    if (confirm('Are you sure you want to clear all saved information from this device? This cannot be undone.')) {
+      clearSavedUserData();
+      
+      setFormData({
+        firstName: '',
+        lastName: '',
+        email: '',
+        linkedinUrl: '',
+        profilePicture: '',
+        seat: formData.seat,
+        room: formData.room,
+      });
+      setPhotoUrlInput("");
     }
   };
 
@@ -69,10 +179,8 @@ export default function UserForm({ initialData, seat, room, token }: UserFormPro
     setSubmitStatus("idle");
 
     try {
-      // Format LinkedIn URL - ensure it's a full URL
       let linkedInURL = formData.linkedinUrl.trim();
       if (linkedInURL && !linkedInURL.startsWith("http")) {
-        // If it's just a username or partial URL, construct full URL
         if (linkedInURL.includes("linkedin.com")) {
           linkedInURL = `https://${linkedInURL}`;
         } else {
@@ -80,7 +188,14 @@ export default function UserForm({ initialData, seat, room, token }: UserFormPro
         }
       }
 
-      // POST to session API
+      setSavedUserData({
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        linkedinUrl: formData.linkedinUrl,
+        profilePicture: formData.profilePicture,
+      });
+
       const response = await fetch("/api/session/enter", {
         method: "POST",
         headers: {
@@ -93,16 +208,14 @@ export default function UserForm({ initialData, seat, room, token }: UserFormPro
           lastName: formData.lastName,
           email: formData.email,
           linkedInURL: linkedInURL || "",
-          photo: "", // Photo will be empty for now
+          photo: formData.profilePicture || "",
         }),
       });
 
       if (response.ok) {
-        // Redirect to waiting room - must use token
         if (token) {
           router.push(`/waiting-room?token=${encodeURIComponent(token)}`);
         } else {
-          // Should not happen if token is required, but handle gracefully
           console.error("UserForm: No token available for redirect");
           setSubmitStatus("error");
           setIsSubmitting(false);
@@ -118,9 +231,112 @@ export default function UserForm({ initialData, seat, room, token }: UserFormPro
     }
   };
 
+  if (isLoadingStorage) {
+    return (
+      <div className="space-y-4">
+        <div className="text-center text-zinc-600 dark:text-zinc-400">
+          Loading your information...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {(savedUserData.firstName || savedUserData.email) && (
+        <div className="flex items-start justify-between gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+          <span className="flex-1">✓ Your information is saved on this device</span>
+          <button
+            type="button"
+            onClick={handleClearData}
+            className="text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium underline whitespace-nowrap"
+          >
+            Clear Data
+          </button>
+        </div>
+      )}
+
       <div className="space-y-4">
+        {/* Profile Picture Upload Section */}
+        <div>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+            Profile Picture
+          </label>
+          
+          {/* Preview */}
+          {formData.profilePicture && (
+            <div className="flex items-center gap-4 mb-3">
+              <img
+                src={formData.profilePicture}
+                alt="Profile preview"
+                className="w-20 h-20 rounded-full object-cover border-2 border-zinc-300 dark:border-zinc-700"
+              />
+              <button
+                type="button"
+                onClick={handleRemovePhoto}
+                className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 font-medium"
+              >
+                Remove Photo
+              </button>
+            </div>
+          )}
+
+          {/* Upload Options */}
+          <div className="flex flex-col gap-2">
+            <label className="cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <div className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-700 rounded-lg text-center text-sm font-medium text-zinc-700 dark:text-zinc-300 transition-colors">
+                📁 Upload from Device
+              </div>
+            </label>
+
+            {!showUrlInput ? (
+              <button
+                type="button"
+                onClick={() => setShowUrlInput(true)}
+                className="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 transition-colors"
+              >
+                🔗 Use Image URL
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={photoUrlInput}
+                  onChange={(e) => setPhotoUrlInput(e.target.value)}
+                  placeholder="https://example.com/photo.jpg"
+                  className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 text-sm focus:outline-none focus:ring-2 focus:ring-[#0077b5] focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={handleUrlSubmit}
+                  className="px-4 py-2 bg-[#0077b5] hover:bg-[#005885] text-white font-medium rounded-lg text-sm transition-colors"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUrlInput(false);
+                    setPhotoUrlInput("");
+                  }}
+                  className="px-3 py-2 bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-300 rounded-lg text-sm transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+            Upload an image from your device or provide a URL (max 5MB)
+          </p>
+        </div>
+
         <div>
           <label
             htmlFor="firstName"
@@ -250,7 +466,21 @@ export default function UserForm({ initialData, seat, room, token }: UserFormPro
       >
         {isSubmitting ? "Entering Session..." : "Enter Session"}
       </button>
+      
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Your information is stored locally on this device
+        </p>
+        {(savedUserData.firstName || savedUserData.email) && (
+          <button
+            type="button"
+            onClick={handleClearData}
+            className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400 font-medium underline whitespace-nowrap"
+          >
+            Delete Saved Data
+          </button>
+        )}
+      </div>
     </form>
   );
 }
-

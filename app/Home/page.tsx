@@ -152,14 +152,11 @@ export default async function HomePage({
             </div>
           </div>
 
-          {/* LinkedIn Connection Section */}
-          <div className="w-full max-w-md rounded-lg border-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-8">
-            <h2 className="text-xl font-semibold text-black dark:text-zinc-50 mb-4">
-              LinkedIn Connection
-            </h2>
-
+          {/* Main Form and LinkedIn Section */}
+          <div className="w-full max-w-md space-y-6">
+            {/* Error Messages */}
             {error && (
-              <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-400 text-sm">
+              <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-400 text-sm">
                 <p className="font-semibold mb-1">Error: {error}</p>
                 {errorDetails && (
                   <p className="text-xs mt-1 opacity-75">
@@ -207,56 +204,67 @@ export default async function HomePage({
               </div>
             )}
 
+            {/* Success Message */}
             {linkedinIsConnected && !error && (
-              <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-400 text-sm">
-                Successfully connected to LinkedIn!
+              <div className="p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-400 text-sm">
+                ✓ Successfully connected to LinkedIn! You can now complete any additional information below.
               </div>
             )}
 
-            {linkedinData ? (
-              <div className="mb-4">
-                <UserForm
-                  initialData={{
-                    firstName: linkedinData.firstName || "",
-                    lastName: linkedinData.lastName || "",
-                    email: linkedinData.email || "",
-                    linkedinId: linkedinData.linkedinId || "",
-                    seatId: linkedinData.seatId || "",
-                  }}
-                  seat={seatValue}
-                  room={roomValue}
-                  token={params.token || undefined}
-                />
-              </div>
-            ) : (
+            {/* User Form - Always Visible */}
+            <div className="rounded-lg border-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
+              <h2 className="text-xl font-semibold text-black dark:text-zinc-50 mb-4">
+                Your Information
+              </h2>
+              <UserForm
+                initialData={{
+                  firstName: linkedinData?.firstName || "",
+                  lastName: linkedinData?.lastName || "",
+                  email: linkedinData?.email || "",
+                  linkedinId: linkedinData?.linkedinId || "",
+                  seatId: linkedinData?.seatId || seatValue,
+                }}
+                seat={seatValue}
+                room={roomValue}
+                token={params.token || undefined}
+              />
+            </div>
+
+            {/* LinkedIn Connection Section */}
+            <div className="rounded-lg border-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-6">
+              <h2 className="text-xl font-semibold text-black dark:text-zinc-50 mb-3">
+                Quick Sign Up with LinkedIn
+              </h2>
               <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
-                Connect your LinkedIn account to update your information.
+                {linkedinData 
+                  ? "Your LinkedIn is connected. You can reconnect or clear your data below."
+                  : "Connect your LinkedIn account to auto-fill your information above."}
               </p>
-            )}
 
-            <div className="flex gap-3">
-              <a
-                href={linkedinAuthUrl}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#0077b5] hover:bg-[#005885] text-white font-semibold rounded-lg transition-colors duration-200"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
+              <div className="flex flex-col gap-3">
+                <a
+                  href={linkedinAuthUrl}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-[#0077b5] hover:bg-[#005885] text-white font-semibold rounded-lg transition-colors duration-200"
                 >
-                  <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                </svg>
-                {linkedinData ? "Reconnect LinkedIn" : "Connect with LinkedIn"}
-              </a>
-              {linkedinData && (
-                <Link
-                  href={`/api/clear-cookies?token=${encodeURIComponent(params.token!)}`}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 font-semibold rounded-lg transition-colors duration-200 text-sm"
-                >
-                  Clear Cookies
-                </Link>
-              )}
+                  <svg
+                    className="w-5 h-5"
+                    fill="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                  </svg>
+                  {linkedinData ? "Reconnect LinkedIn" : "Connect with LinkedIn"}
+                </a>
+                {linkedinData && (
+                  <Link
+                    href={`/api/clear-cookies?token=${encodeURIComponent(params.token!)}`}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 font-semibold rounded-lg transition-colors duration-200 text-sm"
+                  >
+                    Clear LinkedIn Data
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
         </div>
