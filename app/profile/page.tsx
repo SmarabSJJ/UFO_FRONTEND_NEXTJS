@@ -1,8 +1,6 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import UserForm from "./UserForm";
-import { validateToken } from "@/lib/token-utils";
+import ProfileUserForm from "./ProfileUserForm";
 
 // Force dynamic rendering to ensure searchParams are always fresh
 export const dynamic = "force-dynamic";
@@ -14,47 +12,16 @@ const BACKEND_URL =
   "http://127.0.0.1:5000";
 const SESSION_COOKIE_NAME = "auth_session";
 
-export default async function HomePage({
+export default async function ProfilePage({
   searchParams,
 }: {
   searchParams: Promise<{
-    token?: string;
     linkedin?: string;
     error?: string;
     details?: string;
   }>;
 }) {
   const params = await searchParams;
-  // Log for debugging
-  console.log("Home page - token parameter:", params.token);
-
-  // Only accept token - no legacy seat/room support
-  if (!params.token || params.token.trim() === "") {
-    console.error("Home page accessed without token - redirecting to root");
-    redirect("/?error=no_token");
-  }
-
-  const token = params.token.trim();
-  console.log("Home page - decrypting token:", token);
-
-  // Decrypt token to get seat and room
-  const tokenData = validateToken(token);
-
-  if (!tokenData) {
-    console.error("Home page - invalid token");
-    redirect("/?error=invalid_token");
-  }
-
-  const seatValue = tokenData.seat;
-  const roomValue = tokenData.room;
-  console.log("Home page - token decrypted - seat:", seatValue, "room:", roomValue);
-
-  // Validate seat pattern
-  const seatPattern = /^[01]\d+$/;
-  if (!seatPattern.test(seatValue.trim())) {
-    console.error("Home page - invalid seat format from token:", seatValue);
-    redirect("/?error=invalid_token");
-  }
   const cookieStore = await cookies();
 
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -67,7 +34,6 @@ export default async function HomePage({
     lastName?: string;
     email?: string;
     linkedinId?: string;
-    seat?: string;
     profilePicture?: string;
   } | null = null;
 
@@ -99,60 +65,22 @@ export default async function HomePage({
         lastName: sessionUser.lastName || "",
         email: sessionUser.email || "",
         linkedinId: sessionUser.linkedinId || "",
-        seatId: sessionUser.seat || seatValue,
         profilePicture: sessionUser.profilePicture || "",
       }
     : null;
 
   const linkedinIsConnected = linkedinConnected || Boolean(linkedinData);
 
-  // Use API route to store token in cookie and redirect to Flask
-  // This ensures cookie is set server-side before redirect
-  const linkedinAuthUrl = `/api/linkedin/auth-start?token=${encodeURIComponent(params.token!)}`;
-
-  // Create seat object with the information (only from URL param)
-  const seatInfo = {
-    seat: seatValue,
-    room: roomValue,
-    timestamp: new Date().toISOString(),
-    status: "active",
-  };
+  // LinkedIn auth URL for profile page - goes through Flask like main page
+  const linkedinAuthUrl = `/api/linkedin/profile-auth-start`;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-center py-32 px-16 bg-white dark:bg-black">
         <div className="flex flex-col items-center gap-8 text-center">
           <h1 className="text-4xl font-bold text-black dark:text-zinc-50">
-            Welcome Home
+            Edit Profile
           </h1>
-
-          <div className="rounded-lg border-2 border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-8">
-            <p className="text-lg text-zinc-600 dark:text-zinc-400 mb-4">
-              Your Seat Information:
-            </p>
-            <div className="space-y-2">
-              <div className="flex items-center gap-4">
-                <div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Seat</p>
-                  <p className="text-3xl font-semibold text-black dark:text-zinc-50">
-                    {seatInfo.seat}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">Room</p>
-                  <p className="text-3xl font-semibold text-black dark:text-zinc-50">
-                    {seatInfo.room}
-                  </p>
-                </div>
-              </div>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Status: {seatInfo.status}
-              </p>
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                Stored at: {new Date(seatInfo.timestamp).toLocaleString()}
-              </p>
-            </div>
-          </div>
 
           {/* Main Form and LinkedIn Section */}
           <div className="w-full max-w-md space-y-6">
@@ -218,18 +146,14 @@ export default async function HomePage({
               <h2 className="text-xl font-semibold text-black dark:text-zinc-50 mb-4">
                 Your Information
               </h2>
-              <UserForm
+              <ProfileUserForm
                 initialData={{
                   firstName: linkedinData?.firstName || "",
                   lastName: linkedinData?.lastName || "",
                   email: linkedinData?.email || "",
                   linkedinId: linkedinData?.linkedinId || "",
-                  seatId: linkedinData?.seatId || seatValue,
                   profilePicture: linkedinData?.profilePicture || "",
                 }}
-                seat={seatValue}
-                room={roomValue}
-                token={params.token || undefined}
               />
             </div>
 
@@ -261,7 +185,7 @@ export default async function HomePage({
                 </a>
                 {linkedinData && (
                   <Link
-                    href={`/api/clear-cookies?token=${encodeURIComponent(params.token!)}`}
+                    href="/api/profile/clear-cookies"
                     className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-zinc-200 hover:bg-zinc-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-700 dark:text-zinc-200 font-semibold rounded-lg transition-colors duration-200 text-sm"
                   >
                     Clear LinkedIn Data
@@ -275,3 +199,4 @@ export default async function HomePage({
     </div>
   );
 }
+

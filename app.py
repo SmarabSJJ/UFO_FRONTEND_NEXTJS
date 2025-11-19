@@ -108,16 +108,22 @@ def linkedin_login():
     # Get token from query parameter (passed from Next.js)
     # Store it in state so we can pass it back to frontend after OAuth
     token = request.args.get("token")
+    is_profile = request.args.get("profile") == "true"  # Check if this is for profile page
     app.logger.info('=' * 60)
     app.logger.info('=== LINKEDIN LOGIN ROUTE ===')
     app.logger.info('Token received: %s', token[:20] + '...' if token else 'None')
     app.logger.info('Token length: %s', len(token) if token else 0)
+    app.logger.info('Is profile flow: %s', is_profile)
     app.logger.info('=' * 60)
     
     state = secrets.token_urlsafe(32)
 
-    # Store token in state so we can pass it back after OAuth completes
-    payload = {"token": token} if token else {}
+    # Store token and profile flag in state so we can pass it back after OAuth completes
+    payload = {}
+    if token:
+        payload["token"] = token
+    if is_profile:
+        payload["profile"] = True
     app.logger.info('Storing in state: %s', state[:20] + '...')
     app.logger.info('Payload: %s', payload)
     remember_state(state, payload)
@@ -151,6 +157,7 @@ def linkedin_callback():
     state = request.args.get("state")
 
     if not code or not state:
+        # Can't determine if profile flow without state, default to regular flow
         return redirect(
             build_frontend_url("/auth/callback", {"error": "missing_code_state"}), code=302
         )
@@ -165,8 +172,13 @@ def linkedin_callback():
     app.logger.info('=' * 60)
     
     if saved_state is None:
+        is_profile_flow = False  # Default to regular flow
+        redirect_path = "/auth/callback"
+        callback_params = {"error": "invalid_or_expired_state"}
+        # Try to determine if it was a profile flow from the state (fallback)
+        # But since state is invalid, we default to regular flow
         return redirect(
-            build_frontend_url("/auth/callback", {"error": "invalid_or_expired_state"}), code=302
+            build_frontend_url(redirect_path, callback_params), code=302
         )
 
     try:
@@ -188,8 +200,11 @@ def linkedin_callback():
             raise ValueError("Access token missing in response.")
     except Exception as exc:
         app.logger.exception("Token exchange failed: %s", exc)
+        # saved_state already popped above, check if it's a profile flow
+        is_profile_error = saved_state.get("profile", False) if saved_state else False
+        redirect_path = "/profile" if is_profile_error else "/auth/callback"
         return redirect(
-            build_frontend_url("/auth/callback", {"error": "token_exchange_failed"}), code=302
+            build_frontend_url(redirect_path, {"error": "token_exchange_failed"}), code=302
         )
 
     try:
@@ -199,16 +214,25 @@ def linkedin_callback():
         profile = profile_resp.json()
     except Exception as exc:
         app.logger.exception("Failed to fetch LinkedIn profile: %s", exc)
+        # saved_state already popped above, check it before it was popped
+        # Actually we need to get it from the state that was already popped
+        # Since we already have saved_state, use it
+        is_profile_error = saved_state.get("profile", False) if saved_state else False
+        redirect_path = "/profile" if is_profile_error else "/auth/callback"
         return redirect(
-            build_frontend_url("/auth/callback", {"error": "profile_fetch_failed"}), code=302
+            build_frontend_url(redirect_path, {"error": "profile_fetch_failed"}), code=302
         )
 
     # Extract the fields you need
+    # LinkedIn userinfo endpoint returns profile picture in 'picture' field
+    profile_picture = profile.get("picture") or profile.get("picture_url") or ""
+    
     user_info = {
         "firstName": profile.get("given_name") or profile.get("localizedFirstName") or "",
         "lastName": profile.get("family_name") or profile.get("localizedLastName") or "",
         "email": profile.get("email", ""),
         "linkedinId": profile.get("sub", ""),
+        "profilePicture": profile_picture,
         # Note: seat/token info is handled by frontend, not needed here
     }
 
@@ -216,19 +240,27 @@ def linkedin_callback():
     # Here we mint a dummy session token. Replace with your session logic.
     session_token = secrets.token_urlsafe(32)
 
-    # Get token from saved state to pass back to frontend
+    # Get token and profile flag from saved state to pass back to frontend
     saved_token = saved_state.get("token") if saved_state else None
+    is_profile_flow = saved_state.get("profile", False) if saved_state else False
     app.logger.info('=' * 60)
     app.logger.info('=== BUILDING CALLBACK URL ===')
     app.logger.info('Saved token extracted: %s', saved_token[:20] + '...' if saved_token else 'None')
     app.logger.info('Token length: %s', len(saved_token) if saved_token else 0)
+    app.logger.info('Is profile flow: %s', is_profile_flow)
     
-    # Build callback URL with token if available
-    callback_params = {"status": "success"}
-    if saved_token:
-        callback_params["token"] = saved_token
+    # Build callback URL - if profile flow, redirect to /profile, otherwise /auth/callback
+    if is_profile_flow:
+        # For profile flow, redirect directly to /profile with success
+        callback_params = {"linkedin": "connected"}
+        callback_url = build_frontend_url("/profile", callback_params)
+    else:
+        # For regular flow, use /auth/callback with token if available
+        callback_params = {"status": "success"}
+        if saved_token:
+            callback_params["token"] = saved_token
+        callback_url = build_frontend_url("/auth/callback", callback_params)
     
-    callback_url = build_frontend_url("/auth/callback", callback_params)
     app.logger.info('Callback URL: %s', callback_url)
     app.logger.info('Callback params: %s', callback_params)
     app.logger.info('=' * 60)
@@ -261,6 +293,71 @@ def auth_session():
     if not record:
         abort(401)
     return record["user"]
+
+
+@app.route("/api/profile", methods=["POST"])
+def save_profile():
+    """
+    Save user profile data.
+    Can be called with or without session (for profile page usage).
+    """
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data:
+            return {"error": "No data provided"}, 400
+        
+        firstName = data.get("firstName", "")
+        lastName = data.get("lastName", "")
+        email = data.get("email", "")
+        linkedInURL = data.get("linkedInURL", "")
+        photo = data.get("photo", "")
+        
+        if not firstName or not lastName or not email:
+            return {"error": "firstName, lastName, and email are required"}, 400
+        
+        # Get session token if available (optional for profile page)
+        session_token = request.cookies.get(SESSION_COOKIE_NAME)
+        
+        # Prepare profile data
+        profile_data = {
+            "firstName": firstName,
+            "lastName": lastName,
+            "email": email,
+            "linkedInURL": linkedInURL,
+            "photo": photo,
+        }
+        
+        # If session exists, update the user data in session store
+        if session_token:
+            record = STATE_STORE.get(session_token)
+            if record:
+                # Update existing session user data
+                record["user"] = {**record.get("user", {}), **profile_data}
+                STATE_STORE[session_token] = record
+                app.logger.info(f"Updated profile for session: {session_token[:20]}...")
+            else:
+                # Create new session entry
+                STATE_STORE[session_token] = {"user": profile_data}
+                app.logger.info(f"Created new session profile: {session_token[:20]}...")
+        
+        # TODO: In production, save to database instead of in-memory store
+        # For now, we'll just return success
+        # You can add database save logic here:
+        # db.save_profile(email, profile_data)
+        
+        app.logger.info(f"Profile saved for: {email}")
+        
+        return {
+            "success": True,
+            "message": "Profile saved successfully",
+            "data": profile_data
+        }, 200
+        
+    except Exception as exc:
+        app.logger.exception("Error saving profile: %s", exc)
+        return {"error": "Failed to save profile", "details": str(exc)}, 500
 
 
 # Make app available for flask run command

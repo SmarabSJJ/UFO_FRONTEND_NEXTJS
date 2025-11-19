@@ -1,41 +1,27 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import { useLocalStorage } from "../Home/useLocalStorage";
 
-interface UserFormData {
+interface ProfileUserFormData {
   firstName: string;
   lastName: string;
   email: string;
   linkedinUrl: string;
   profilePicture: string;
-  seat: string;
-  room: string;
 }
 
-interface UserFormProps {
+interface ProfileUserFormProps {
   initialData: {
     firstName: string;
     lastName: string;
     email?: string;
     linkedinId?: string;
-    seatId?: string;
     profilePicture?: string;
   };
-  seat: string;
-  room: string;
-  token: string;
 }
 
-export default function UserForm({
-  initialData,
-  seat,
-  room,
-  token,
-}: UserFormProps) {
-  const router = useRouter();
-
+export default function ProfileUserForm({ initialData }: ProfileUserFormProps) {
   const [
     savedUserData,
     setSavedUserData,
@@ -47,7 +33,7 @@ export default function UserForm({
     email: string;
     linkedinUrl: string;
     profilePicture: string;
-  }>("userFormData", {
+  }>("profileFormData", {
     firstName: "",
     lastName: "",
     email: "",
@@ -55,18 +41,18 @@ export default function UserForm({
     profilePicture: "",
   });
 
-  const [formData, setFormData] = useState<UserFormData>({
+  const [formData, setFormData] = useState<ProfileUserFormData>({
     firstName: initialData.firstName || "",
     lastName: initialData.lastName || "",
     email: initialData.email || "",
     linkedinUrl: "",
     profilePicture: initialData.profilePicture || "",
-    seat: seat || initialData.seatId || "",
-    room: room || "100",
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<"idle" | "error">("idle");
+  const [submitStatus, setSubmitStatus] = useState<
+    "idle" | "success" | "error"
+  >("idle");
   const [photoUrlInput, setPhotoUrlInput] = useState("");
   const [showUrlInput, setShowUrlInput] = useState(false);
   const hasInitializedRef = useRef(false);
@@ -109,14 +95,6 @@ export default function UserForm({
     }
   }, [isLoadingStorage, savedUserData, initialData]);
 
-  useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      seat: seat || initialData.seatId || "",
-      room: room || "100",
-    }));
-  }, [seat, room, initialData.seatId]);
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
 
@@ -125,12 +103,10 @@ export default function UserForm({
       [name]: value,
     }));
 
-    if (name !== "seat" && name !== "room") {
-      setSavedUserData((prev) => ({
-        ...prev,
-        [name]: value,
-      }));
-    }
+    setSavedUserData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
 
     if (submitStatus !== "idle") {
       setSubmitStatus("idle");
@@ -207,8 +183,6 @@ export default function UserForm({
         email: "",
         linkedinUrl: "",
         profilePicture: "",
-        seat: formData.seat,
-        room: formData.room,
       });
       setPhotoUrlInput("");
     }
@@ -229,6 +203,7 @@ export default function UserForm({
         }
       }
 
+      // Save locally first
       setSavedUserData({
         firstName: formData.firstName,
         lastName: formData.lastName,
@@ -237,14 +212,13 @@ export default function UserForm({
         profilePicture: formData.profilePicture,
       });
 
-      const response = await fetch("/api/session/enter", {
+      // Call Flask backend to save profile
+      const response = await fetch("/api/profile/save", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          seatID: formData.seat,
-          roomID: formData.room,
           firstName: formData.firstName,
           lastName: formData.lastName,
           email: formData.email,
@@ -254,19 +228,21 @@ export default function UserForm({
       });
 
       if (response.ok) {
-        if (token) {
-          router.push(`/waiting-room?token=${encodeURIComponent(token)}`);
-        } else {
-          console.error("UserForm: No token available for redirect");
-          setSubmitStatus("error");
-          setIsSubmitting(false);
-        }
+        setSubmitStatus("success");
+        setIsSubmitting(false);
+
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setSubmitStatus("idle");
+        }, 3000);
       } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Failed to save profile:", errorData);
         setSubmitStatus("error");
         setIsSubmitting(false);
       }
     } catch (error) {
-      console.error("Error entering session:", error);
+      console.error("Error saving profile:", error);
       setSubmitStatus("error");
       setIsSubmitting(false);
     }
@@ -451,54 +427,17 @@ export default function UserForm({
             className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-black dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#0077b5] focus:border-transparent"
           />
         </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label
-              htmlFor="seat"
-              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1"
-            >
-              Seat
-            </label>
-            <input
-              type="text"
-              id="seat"
-              name="seat"
-              value={formData.seat}
-              readOnly
-              disabled
-              className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 cursor-not-allowed"
-            />
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-              Seat cannot be changed
-            </p>
-          </div>
-          <div>
-            <label
-              htmlFor="room"
-              className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1"
-            >
-              Room
-            </label>
-            <input
-              type="text"
-              id="room"
-              name="room"
-              value={formData.room}
-              readOnly
-              disabled
-              className="w-full px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 cursor-not-allowed"
-            />
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-              Room cannot be changed
-            </p>
-          </div>
-        </div>
       </div>
+
+      {submitStatus === "success" && (
+        <div className="p-3 bg-green-100 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded text-green-700 dark:text-green-400 text-sm">
+          ✓ Profile saved successfully!
+        </div>
+      )}
 
       {submitStatus === "error" && (
         <div className="p-3 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded text-red-700 dark:text-red-400 text-sm">
-          Error entering session. Please try again.
+          Error saving profile. Please try again.
         </div>
       )}
 
@@ -507,7 +446,7 @@ export default function UserForm({
         disabled={isSubmitting}
         className="w-full px-6 py-3 bg-[#0077b5] hover:bg-[#005885] disabled:bg-zinc-400 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors duration-200"
       >
-        {isSubmitting ? "Entering Session..." : "Enter Session"}
+        {isSubmitting ? "Saving..." : "Save Profile"}
       </button>
 
       <div className="flex items-center justify-between gap-2">
