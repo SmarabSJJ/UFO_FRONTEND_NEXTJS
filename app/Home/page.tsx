@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import UserForm from "./UserForm";
+import SessionUserForm from "../componets/userform/SessionUserForm";
 import { validateToken } from "@/lib/token-utils";
 
 // Force dynamic rendering to ensure searchParams are always fresh
@@ -213,12 +213,12 @@ export default async function HomePage({
               </div>
             )}
 
-            {/* User Form - Always Visible */}
+            {/* Session User Form */}
             <div className="rounded-lg border-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
               <h2 className="text-xl font-semibold text-black dark:text-zinc-50 mb-4">
                 Your Information
               </h2>
-              <UserForm
+              <SessionUserForm
                 initialData={{
                   firstName: linkedinData?.firstName || "",
                   lastName: linkedinData?.lastName || "",
@@ -229,7 +229,7 @@ export default async function HomePage({
                 }}
                 seat={seatValue}
                 room={roomValue}
-                token={params.token || undefined}
+                token={params.token || ""}
               />
             </div>
 

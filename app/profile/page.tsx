@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
-import ProfileUserForm from "./ProfileUserForm";
+import ProfileUserForm from "../componets/userform/ProfileUserForm";
 
 // Force dynamic rendering to ensure searchParams are always fresh
 export const dynamic = "force-dynamic";
@@ -141,7 +141,7 @@ export default async function ProfilePage({
               </div>
             )}
 
-            {/* User Form - Always Visible */}
+            {/* Profile User Form */}
             <div className="rounded-lg border-2 border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6">
               <h2 className="text-xl font-semibold text-black dark:text-zinc-50 mb-4">
                 Your Information
@@ -199,4 +199,3 @@ export default async function ProfilePage({
     </div>
   );
 }
-

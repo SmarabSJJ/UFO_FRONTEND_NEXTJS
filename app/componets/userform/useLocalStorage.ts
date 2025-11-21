@@ -13,6 +13,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
       const item = window.localStorage.getItem(key);
       if (item) {
         setStoredValue(JSON.parse(item));
+        console.log(`Loaded ${key} from localStorage:`, JSON.parse(item));
       }
     } catch (error) {
       console.error(`Error loading ${key} from localStorage:`, error);
@@ -25,6 +26,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
   // Return a wrapped version of useState's setter function that
   // persists the new value to localStorage
   const setValue = (value: T | ((val: T) => T)) => {
+    
     try {
       // Allow value to be a function so we have same API as useState
       const valueToStore = value instanceof Function ? value(storedValue) : value;
@@ -34,6 +36,7 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
       // Save to localStorage
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(key, JSON.stringify(valueToStore));
+        
       }
     } catch (error) {
       console.error(`Error saving ${key} to localStorage:`, error);
