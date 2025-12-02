@@ -4,13 +4,17 @@ import { cookies } from "next/headers";
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
   const accessToken = cookieStore.get("linkedin_access_token")?.value;
-  // Get token from URL parameter (passed from callback via state)
+  // Get token or redirect destination from URL parameter (passed from callback via state)
   const searchParams = request.nextUrl.searchParams;
   const token = searchParams.get("token");
+  const redirectTo = searchParams.get("redirect"); // "profile" for profile page, null for Home
+
+  // Determine redirect destination
+  const redirectBase = redirectTo === "profile" ? "/profile" : "/Home";
 
   if (!accessToken) {
     console.error("No access token found in cookies");
-    const errorUrl = new URL("/Home", request.url);
+    const errorUrl = new URL(redirectBase, request.url);
     errorUrl.searchParams.set("error", "no_access_token");
     if (token) {
       errorUrl.searchParams.set("token", token);
@@ -30,7 +34,7 @@ export async function GET(request: NextRequest) {
       const errorText = await profileResponse.text();
       console.error("LinkedIn API error:", errorText);
       console.error("Status:", profileResponse.status);
-      const errorUrl = new URL("/Home", request.url);
+      const errorUrl = new URL(redirectBase, request.url);
       errorUrl.searchParams.set("error", "linkedin_api_error");
       errorUrl.searchParams.set("details", errorText.substring(0, 200));
       if (token) {
@@ -50,6 +54,10 @@ export async function GET(request: NextRequest) {
     const firstName = profileData.given_name || profileData.name?.split(" ")[0] || "";
     const lastName = profileData.family_name || profileData.name?.split(" ").slice(1).join(" ") || "";
     const email = profileData.email || "";
+    
+    // Extract profile picture from LinkedIn response
+    // LinkedIn userinfo endpoint returns profile picture in 'picture' or 'picture_url' field
+    const profilePicture = profileData.picture || profileData.picture_url || "";
     
     // Extract LinkedIn ID
     // The userinfo endpoint provides 'sub' which is the LinkedIn person URN
@@ -106,6 +114,7 @@ export async function GET(request: NextRequest) {
       email,
       lID,
       seatId,
+      profilePicture,
       // Include full LinkedIn response for debugging
       fullLinkedInResponse: profileData,
     };
@@ -147,17 +156,17 @@ export async function GET(request: NextRequest) {
     // Clear the access token from cookies
     cookieStore.delete("linkedin_access_token");
 
-    // Redirect back to Home with success and token in URL
-    const homeUrl = new URL("/Home", request.url);
-    homeUrl.searchParams.set("linkedin", "connected");
+    // Redirect back to appropriate page with success
+    const redirectUrl = new URL(redirectBase, request.url);
+    redirectUrl.searchParams.set("linkedin", "connected");
     if (token) {
-      homeUrl.searchParams.set("token", token);
+      redirectUrl.searchParams.set("token", token);
     }
-    return NextResponse.redirect(homeUrl);
+    return NextResponse.redirect(redirectUrl);
   } catch (error) {
     console.error("Error fetching LinkedIn data:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorUrl = new URL("/Home", request.url);
+    const errorUrl = new URL(redirectBase, request.url);
     errorUrl.searchParams.set("error", "fetch_error");
     errorUrl.searchParams.set("details", errorMessage);
     if (token) {

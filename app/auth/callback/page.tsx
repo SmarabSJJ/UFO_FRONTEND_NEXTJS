@@ -26,12 +26,31 @@ export default function AuthCallbackPage() {
       console.log("Token from URL:", tokenFromUrl);
       console.log("All search params:", Array.from(searchParams.entries()));
       
+      // Check if this is a profile flow (no token needed)
+      // Profile flows come from Flask and have linkedin=connected parameter
+      // OR if there's no token and we have a session cookie (Flask sets this)
+      const linkedinParam = searchParams.get("linkedin");
+      
+      // Check for session cookie to detect profile flow
+      let hasSessionCookie = false;
+      try {
+        const sessionCheck = await fetch(`${BACKEND_URL}/auth/session`, {
+          credentials: "include",
+          cache: "no-store",
+        });
+        hasSessionCookie = sessionCheck.ok;
+      } catch (e) {
+        // Session check failed, continue
+      }
+      
+      const isProfileFlow = linkedinParam === "connected" || (!tokenFromUrl && hasSessionCookie);
+      
       // Priority 1: Token from URL (passed by Flask)
       // Priority 2: Token from cookie (backup)
       let token: string | null = tokenFromUrl;
       
-      // If no token in URL, try to get from cookie
-      if (!token) {
+      // If no token in URL, try to get from cookie (only for non-profile flows)
+      if (!token && !isProfileFlow) {
         try {
           const tokenResponse = await fetch("/api/get-pending-token", {
             credentials: "include",
@@ -47,15 +66,25 @@ export default function AuthCallbackPage() {
         } catch (err) {
           console.error("Error fetching pending token from cookie:", err);
         }
-      } else {
+      } else if (token) {
         console.log("Auth callback - token retrieved from URL (Flask)");
+      } else if (isProfileFlow) {
+        console.log("Auth callback - profile flow detected, no token required");
       }
 
-      // If no token found, redirect to root with error
-      if (!token) {
+      // If no token found and not a profile flow, redirect to root with error
+      if (!token && !isProfileFlow) {
         console.error("Auth callback - no token found in URL or cookie, redirecting to root");
         setMessage("Token not found. Redirecting...");
         router.replace("/?error=token_lost_during_auth");
+        return;
+      }
+      
+      // For profile flow, redirect directly to profile page
+      if (isProfileFlow) {
+        console.log("Auth callback - redirecting to profile page");
+        setMessage("Redirecting to profile...");
+        router.replace("/profile?linkedin=connected");
         return;
       }
 
